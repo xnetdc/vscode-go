@@ -110,6 +110,7 @@ import extensionAPI from './extensionAPI';
 import { GoTestExplorer, isVscodeTestingAPIAvailable } from './goTest/explore';
 import { killRunningPprof } from './goTest/profile';
 import { GoExplorerProvider } from './goExplorer';
+import { VulncheckProvider } from './goVulncheck';
 
 export let buildDiagnosticCollection: vscode.DiagnosticCollection;
 export let lintDiagnosticCollection: vscode.DiagnosticCollection;
@@ -148,6 +149,11 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<ExtensionA
 	if (!extensionInfo.isInCloudIDE) {
 		showGoWelcomePage(ctx);
 	}
+	ctx.subscriptions.push(
+		vscode.commands.registerCommand('go.welcome', () => {
+			WelcomePanel.createOrShow(ctx.extensionUri);
+		})
+	);
 
 	const configGOROOT = getGoConfig()['goroot'];
 	if (configGOROOT) {
@@ -183,24 +189,33 @@ If you would like additional configuration for diagnostics from gopls, please se
 		}
 	}
 
-	updateGoVarsFromConfig().then(async () => {
-		suggestUpdates(ctx);
-		offerToInstallLatestGoVersion();
-		offerToInstallTools();
-		await configureLanguageServer(ctx);
+	return activateContinued(ctx, cfg);
+}
 
-		if (
-			!languageServerIsRunning &&
-			vscode.window.activeTextEditor &&
-			vscode.window.activeTextEditor.document.languageId === 'go' &&
-			isGoPathSet()
-		) {
-			// Check mod status so that cache is updated and then run build/lint/vet
-			isModSupported(vscode.window.activeTextEditor.document.uri).then(() => {
-				runBuilds(vscode.window.activeTextEditor.document, getGoConfig());
-			});
-		}
-	});
+async function activateContinued(
+	ctx: vscode.ExtensionContext,
+	cfg: vscode.WorkspaceConfiguration
+): Promise<ExtensionAPI> {
+	await updateGoVarsFromConfig();
+
+	suggestUpdates(ctx);
+	offerToInstallLatestGoVersion();
+	offerToInstallTools();
+
+	// TODO: let configureLanguageServer to return its status.
+	await configureLanguageServer(ctx);
+
+	if (
+		!languageServerIsRunning &&
+		vscode.window.activeTextEditor &&
+		vscode.window.activeTextEditor.document.languageId === 'go' &&
+		isGoPathSet()
+	) {
+		// Check mod status so that cache is updated and then run build/lint/vet
+		isModSupported(vscode.window.activeTextEditor.document.uri).then(() => {
+			runBuilds(vscode.window.activeTextEditor.document, getGoConfig());
+		});
+	}
 
 	initCoverageDecorators(ctx);
 
@@ -329,6 +344,7 @@ If you would like additional configuration for diagnostics from gopls, please se
 	}
 
 	GoExplorerProvider.setup(ctx);
+	VulncheckProvider.setup(ctx);
 
 	ctx.subscriptions.push(
 		vscode.commands.registerCommand('go.subtest.cursor', (args) => {
@@ -617,12 +633,6 @@ If you would like additional configuration for diagnostics from gopls, please se
 	ctx.subscriptions.push(
 		vscode.commands.registerCommand('go.extractServerChannel', () => {
 			showServerOutputChannel();
-		})
-	);
-
-	ctx.subscriptions.push(
-		vscode.commands.registerCommand('go.welcome', () => {
-			WelcomePanel.createOrShow(ctx.extensionUri);
 		})
 	);
 
